@@ -1,78 +1,77 @@
 pipeline {
-  agent {
-    label 'docker-host'
-  }
+    agent any
+    environment {
+        PROJECT_NAME = 'KinoTavr'
+        DOCKER_COMPOSE_FILE = 'docker-compose.yml'
 
-  environment {
-    PROJECT_NAME = 'KinoTavr'
-    DEPLOY_DIR   = '/opt/kinotavr'
-    COMPOSE_FILE = 'docker-compose.yml'
-  }
-
-  options {
-    buildDiscarder(logRotator(numToKeepStr: '10'))
-    disableConcurrentBuilds()
-    timeout(time: 30, unit: 'MINUTES')
-    timestamps()
-  }
-
-  stages {
-
-    stage('Checkout') {
-      steps {
-        echo '📥 Checking out source code...'
-        checkout scm
-
-        sh '''
-          echo "Branch: $(git rev-parse --abbrev-ref HEAD)"
-          echo "Commit: $(git rev-parse --short HEAD)"
-        '''
-      }
+        // Секреты (извлекаются из Jenkins Credentials)
+        OPENAI_API_KEY = credentials('openai-api-key')
+        TELEGRAM_BOT_TOKEN = credentials('telegram-bot-token')
+        KP_API_KEY = credentials('kp-api-key')
+        WEBAPP_URL = credentials('webapp-url')
+        DB_PASSWORD = credentials('db-password')
+    }
+  
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        disableConcurrentBuilds()
+        timeout(time: 30, unit: 'MINUTES')
     }
 
-    stage('Validate Structure') {
-      steps {
-        echo '🔍 Validating project structure...'
-        sh '''
-          REQUIRED_FILES=(
-            "docker-compose.yml"
-            "Dockerfile.ai"
-            "tgBot/Dockerfile"
-            "db_kinotavr/backend/Dockerfile"
-            "db_kinotavr/parser/Dockerfile"
-          )
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Checking out code from Git...'
+                checkout scm
+            }
+        }
 
-          MISSING=0
-          for f in "${REQUIRED_FILES[@]}"; do
-            if [ ! -f "$f" ]; then
-              echo "✗ Missing: $f"
-              MISSING=1
-            else
-              echo "✓ Found: $f"
-            fi
-          done
+        stage('Validate Structure') {
+            steps {
+                echo 'Validating project structure...'
+                sh '''
+                    test -f docker-compose.yml || (echo "docker-compose.yml not found" && exit 1)
+                    test -f Dockerfile.ai || (echo "Dockerfile.ai not found" && exit 1)
+                    test -f tgBot/Dockerfile || (echo "tgBot/Dockerfile not found" && exit 1)
+                    test -f db_kinotavr/backend/Dockerfile || (echo "backend Dockerfile not found" && exit 1)
+                    test -f db_kinotavr/parser/Dockerfile || (echo "parser Dockerfile not found" && exit 1)
+                    echo "All required files are present."
+                '''
+            }
+        }
 
-          [ "$MISSING" -eq 0 ] || {
-            echo "❌ Required files missing! Aborting."
-            exit 1
-          }
-          echo "✅ All required files are present."
-        '''
-      }
-    }
+        stage('Test & Validate DB') {
+            steps {
+                echo 'Running integration tests for Database...'
+                sh '''
+                    # Запускаем контейнер базы данных для проверки
+                    docker compose up -d db
 
-    stage('Generate Environment') {
-      steps {
-        echo '🔐 Generating deployment .env...'
-        withCredentials([
-          string(credentialsId: 'openai-api-key', variable: 'OPENAI_API_KEY'),
-          string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_BOT_TOKEN'),
-          string(credentialsId: 'kp-api-key', variable: 'KP_API_KEY'),
-          string(credentialsId: 'webapp-url', variable: 'WEBAPP_URL'),
-          string(credentialsId: 'db-password', variable: 'DB_PASSWORD')
-        ]) {
-          sh '''
-            cat > .env << ENVEOF
+                    # Ожидаем готовности PostgreSQL (до 30 попыток)
+                    for i in {1..30}; do
+                        if docker compose exec -T db pg_isready -U user_admin -d movies_db; then
+                            echo "Database is ready!"
+                            break
+                        fi
+                        echo "Waiting for database response... ($i/30)"
+                        sleep 2
+                    done
+
+                    # Проверяем структуру (вывод списка таблиц)
+                    docker compose exec -T db psql -U user_admin -d movies_db -c "\\dt"
+
+                    # Останавливаем тестовую БД и очищаем тома
+                    docker compose down -v
+                '''
+            }
+        }
+
+        stage('Deploy via Docker Compose') {
+            steps {
+                echo 'Deploying project directly to the host server via socket...'
+                sh '''
+                    # Создаем .env файл в текущем воркспейсе
+                    cat > .env << EOF
 OPENAI_API_KEY=${OPENAI_API_KEY}
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 KP_API_KEY=${KP_API_KEY}
@@ -82,126 +81,79 @@ DB_NAME=movies_db
 DB_USER=user_admin
 DB_PASSWORD=${DB_PASSWORD}
 DB_PORT=5432
-ENVEOF
-            chmod 600 .env
-            echo ".env generated (permissions 600)"
-          '''
+EOF
+                    echo "Stopping old microservices if they are running..."
+                    docker compose down || true
+
+                    echo "Building new images without cache..."
+                    docker compose build --no-cache
+
+                    echo "Launching all services in detached mode..."
+                    docker compose up -d
+                '''
+            }
         }
-      }
+
+        stage('Health Check') {
+            steps {
+                echo 'Verifying services health...'
+                sh '''
+                    echo "Giving services 10 seconds to initialize..."
+                    sleep 10
+
+                    # Проверяем статус контейнеров через docker compose
+                    docker compose ps
+
+                    # Проверка AI бэкенда
+                    for i in {1..30}; do
+                        if curl -f http://localhost:8001/ping > /dev/null 2>&1; then
+                            echo "[✓] AI Backend is healthy."
+                            break
+                        fi
+                        if [ $i -eq 30 ]; then
+                            echo "[🔴] AI Backend check failed!" && exit 1;
+                        fi
+                        sleep 2
+                    done
+
+                    # Проверка DB бэкенда
+                    for i in {1..30}; do
+                        if curl -f http://localhost:8000/api/v1/colors > /dev/null 2>&1; then
+                            echo "[✓] DB Backend is healthy."
+                            break
+                        fi
+                        if [ $i -eq 30 ]; then
+                            echo "[🔴] DB Backend check failed!" && exit 1;
+                        fi
+                        sleep 2
+                    done
+                '''
+            }
+        }
+
+        stage('Smoke Tests') {
+            steps {
+                echo 'Running smoke tests...'
+                sh '''
+                    curl -s http://localhost:8000/api/v1/colors | grep -q 'deep_blue' || (echo "Smoke test failed on DB API" && exit 1)
+                    curl -s http://localhost:8001/ping | grep -q 'alive' || (echo "Smoke test failed on AI API" && exit 1)
+                    echo 'All smoke tests passed successfully!'
+                '''
+            }
+        }
     }
 
-    stage('Test & Validate DB') {
-      steps {
-        echo '🧪 Running integration tests for Database...'
-        sh '''
-          docker compose up -d db
-          echo "Waiting for PostgreSQL to be ready..."
-
-          for i in $(seq 1 30); do
-            if docker compose exec -T db pg_isready -U user_admin -d movies_db 2>/dev/null; then
-              echo "✅ Database is ready after $i attempts!"
-              break
-            fi
-            [ "$i" -eq 30 ] && { echo "❌ Database failed to start!" && exit 1; }
-            sleep 2
-          done
-
-          echo "Checking database schema..."
-          docker compose exec -T db \
-            psql -U user_admin -d movies_db -c "\dt" || true
-
-          echo "Cleaning up test database..."
-          docker compose down -v
-          echo "✅ DB integration tests passed."
-        '''
-      }
+    post {
+        success {
+            echo 'Deployment finished successfully!'
+        }
+        failure {
+            echo 'Deployment failed!'
+        }
+        always {
+            echo 'Cleaning up temporal build artifacts...'
+            // Гарантированно удаляем секреты из воркспейса по окончании сборки
+            sh 'rm -f .env'
+        }
     }
-
-    stage('Deploy via Docker Compose') {
-      steps {
-        echo '🚀 Deploying to host server...'
-        sh '''
-          echo "Stopping existing services..."
-          docker compose down || true
-
-          echo "Building fresh images (no cache)..."
-          docker compose build --no-cache
-
-          echo "Starting all services..."
-          docker compose up -d
-
-          echo "✅ Deployment commands completed."
-        '''
-      }
-    }
-
-    stage('Health Check') {
-      steps {
-        echo '💓 Verifying service health...'
-        sh '''
-          echo "Allowing 10s for service initialization..."
-          sleep 10
-
-          docker compose ps
-
-          echo "Checking AI Backend (port 8001)..."
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:8001/ping >/dev/null 2>&1; then
-              echo "✅ AI Backend is healthy."
-              break
-            fi
-            [ "$i" -eq 30 ] && { echo "❌ AI Backend unhealthy!" && exit 1; }
-            sleep 2
-          done
-
-          echo "Checking DB Backend (port 8000)..."
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:8000/api/v1/colors >/dev/null 2>&1; then
-              echo "✅ DB Backend is healthy."
-              break
-            fi
-            [ "$i" -eq 30 ] && { echo "❌ DB Backend unhealthy!" && exit 1; }
-            sleep 2
-          done
-
-          echo "✅ All health checks passed."
-        '''
-      }
-    }
-
-    stage('Smoke Tests') {
-      steps {
-        echo '🔬 Running smoke tests...'
-        sh '''
-          echo "Testing DB API response..."
-          curl -sf http://localhost:8000/api/v1/colors \
-            | grep -q 'deep_blue' \
-            || { echo "❌ Smoke test: DB API" && exit 1; }
-          echo "✅ DB API smoke test passed."
-
-          echo "Testing AI API response..."
-          curl -sf http://localhost:8001/ping \
-            | grep -q 'alive' \
-            || { echo "❌ Smoke test: AI API" && exit 1; }
-          echo "✅ AI API smoke test passed."
-
-          echo "✅ All smoke tests passed!"
-        '''
-      }
-    }
-  }
-
-  post {
-    success {
-      echo '🎉 Deployment finished successfully!'
-    }
-    failure {
-      echo '💥 Deployment failed! Check logs for details.'
-    }
-    always {
-      echo '🧹 Cleaning up temporary artifacts...'
-      sh 'rm -f .env || true'
-      echo '✅ Cleanup complete.'
-    }
-  }
 }
