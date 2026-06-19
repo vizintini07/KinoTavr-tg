@@ -1,29 +1,28 @@
 pipeline {
     agent any
     environment {
-        PROJECT_NAME = 'KinoTavr' [cite: 1]
-        DOCKER_COMPOSE_FILE = 'docker-compose.yml' [cite: 1]
+        PROJECT_NAME = 'KinoTavr'
+        DOCKER_COMPOSE_FILE = 'docker-compose.yml'
 
         // Секреты (извлекаются из Jenkins Credentials)
-        OPENAI_API_KEY = credentials('openai-api-key') [cite: 1]
-        TELEGRAM_BOT_TOKEN = credentials('telegram-bot-token') [cite: 1]
-        KP_API_KEY = credentials('kp-api-key') [cite: 1]
-        WEBAPP_URL = credentials('webapp-url') [cite: 1]
-        DB_PASSWORD = credentials('db-password') [cite: 1]
+        OPENAI_API_KEY = credentials('openai-api-key')
+        TELEGRAM_BOT_TOKEN = credentials('telegram-bot-token')
+        KP_API_KEY = credentials('kp-api-key')
+        WEBAPP_URL = credentials('webapp-url')
+        DB_PASSWORD = credentials('db-password')
     }
   
     options {
-        buildDiscarder(logRotator(numToKeepStr: '10')) [cite: 2]
-        disableConcurrentBuilds() [cite: 2]
-        timeout(time: 30, unit: 'MINUTES') [cite: 2]
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        disableConcurrentBuilds()
+        timeout(time: 30, unit: 'MINUTES')
     }
 
     stages {
         stage('Checkout') {
             steps {
                 echo 'Checking out code from Git...'
-                // Автоматически клонирует ветку, которая триггернула пайплайн
-                checkout scm [cite: 3]
+                checkout scm
             }
         }
 
@@ -31,12 +30,12 @@ pipeline {
             steps {
                 echo 'Validating project structure...'
                 sh '''
-                    test -f docker-compose.yml || (echo "docker-compose.yml not found" && exit 1) [cite: 4, 5]
-                    test -f Dockerfile.ai || (echo "Dockerfile.ai not found" && exit 1) [cite: 5, 6]
-                    test -f tgBot/Dockerfile || (echo "tgBot/Dockerfile not found" && exit 1) [cite: 6, 7]
-                    test -f db_kinotavr/backend/Dockerfile || (echo "backend Dockerfile not found" && exit 1) [cite: 7, 8]
-                    test -f db_kinotavr/parser/Dockerfile || (echo "parser Dockerfile not found" && exit 1) [cite: 8, 9]
-                    echo "All required files are present." [cite: 9]
+                    test -f docker-compose.yml || (echo "docker-compose.yml not found" && exit 1)
+                    test -f Dockerfile.ai || (echo "Dockerfile.ai not found" && exit 1)
+                    test -f tgBot/Dockerfile || (echo "tgBot/Dockerfile not found" && exit 1)
+                    test -f db_kinotavr/backend/Dockerfile || (echo "backend Dockerfile not found" && exit 1)
+                    test -f db_kinotavr/parser/Dockerfile || (echo "parser Dockerfile not found" && exit 1)
+                    echo "All required files are present."
                 '''
             }
         }
@@ -45,24 +44,24 @@ pipeline {
             steps {
                 echo 'Running integration tests for Database...'
                 sh '''
-                    # Запускаем только контейнер базы данных для проверки
-                    docker compose up -d db [cite: 11]
+                    # Запускаем контейнер базы данных для проверки
+                    docker compose up -d db
 
                     # Ожидаем готовности PostgreSQL (до 30 попыток)
-                    for i in {1..30}; do [cite: 11, 12]
-                        if docker compose exec -T db pg_isready -U user_admin -d movies_db; then [cite: 12, 13]
-                            echo "Database is ready!" [cite: 13]
-                            break [cite: 14]
+                    for i in {1..30}; do
+                        if docker compose exec -T db pg_isready -U user_admin -d movies_db; then
+                            echo "Database is ready!"
+                            break
                         fi
-                        echo "Waiting for database response... ($i/30)" [cite: 14]
-                        sleep 2 [cite: 14]
+                        echo "Waiting for database response... ($i/30)"
+                        sleep 2
                     done
 
                     # Проверяем структуру (вывод списка таблиц)
-                    docker compose exec -T db psql -U user_admin -d movies_db -c "\\dt" [cite: 15]
+                    docker compose exec -T db psql -U user_admin -d movies_db -c "\\dt"
 
                     # Останавливаем тестовую БД и очищаем тома
-                    docker compose down -v [cite: 15, 16]
+                    docker compose down -v
                 '''
             }
         }
@@ -83,15 +82,14 @@ DB_USER=user_admin
 DB_PASSWORD=${DB_PASSWORD}
 DB_PORT=5432
 EOF
-                    # За счет проброса /var/run/docker.sock команды управляют хостом [cite: 17, 18]
                     echo "Stopping old microservices if they are running..."
-                    docker compose down || true [cite: 18, 19]
+                    docker compose down || true
 
                     echo "Building new images without cache..."
-                    docker compose build --no-cache [cite: 19]
+                    docker compose build --no-cache
 
                     echo "Launching all services in detached mode..."
-                    docker compose up -d [cite: 19]
+                    docker compose up -d
                 '''
             }
         }
@@ -100,46 +98,46 @@ EOF
             steps {
                 echo 'Verifying services health...'
                 sh '''
-                    echo "Giving services 10 seconds to initialize..." [cite: 21]
-                    sleep 10 [cite: 21]
+                    echo "Giving services 10 seconds to initialize..."
+                    sleep 10
 
                     # Проверяем статус контейнеров через docker compose
-                    docker compose ps [cite: 21]
+                    docker compose ps
 
                     # Проверка AI бэкенда
-                    for i in {1..30}; do [cite: 22, 23]
-                        if curl -f http://localhost:8001/ping > /dev/null 2>&1; then [cite: 23, 24]
-                            echo "[✓] AI Backend is healthy." [cite: 24]
-                            break [cite: 25]
+                    for i in {1..30}; do
+                        if curl -f http://localhost:8001/ping > /dev/null 2>&1; then
+                            echo "[✓] AI Backend is healthy."
+                            break
                         fi
-                        if [ $i -eq 30 ]; then [cite: 25, 26]
-                            echo "[🔴] AI Backend check failed!" && exit 1; [cite: 26]
+                        if [ $i -eq 30 ]; then
+                            echo "[🔴] AI Backend check failed!" && exit 1;
                         fi
-                        sleep 2 [cite: 26]
+                        sleep 2
                     done
 
                     # Проверка DB бэкенда
-                    for i in {1..30}; do [cite: 27, 28]
-                        if curl -f http://localhost:8000/api/v1/colors > /dev/null 2>&1; then [cite: 28, 29]
-                            echo "[✓] DB Backend is healthy." [cite: 29]
-                            break [cite: 30]
+                    for i in {1..30}; do
+                        if curl -f http://localhost:8000/api/v1/colors > /dev/null 2>&1; then
+                            echo "[✓] DB Backend is healthy."
+                            break
                         fi
-                        if [ $i -eq 30 ]; then [cite: 30, 31]
-                            echo "[🔴] DB Backend check failed!" && exit 1; [cite: 31]
+                        if [ $i -eq 30 ]; then
+                            echo "[🔴] DB Backend check failed!" && exit 1;
                         fi
-                        sleep 2 [cite: 31]
+                        sleep 2
                     done
                 '''
             }
         }
 
         stage('Smoke Tests') {
-            steps { [cite: 33]
+            steps {
                 echo 'Running smoke tests...'
                 sh '''
-                    curl -s http://localhost:8000/api/v1/colors | grep -q 'deep_blue' || (echo "Smoke test failed on DB API" && exit 1) [cite: 33, 34]
-                    curl -s http://localhost:8001/ping | grep -q 'alive' || (echo "Smoke test failed on AI API" && exit 1) [cite: 34, 35]
-                    echo 'All smoke tests passed successfully!' [cite: 35]
+                    curl -s http://localhost:8000/api/v1/colors | grep -q 'deep_blue' || (echo "Smoke test failed on DB API" && exit 1)
+                    curl -s http://localhost:8001/ping | grep -q 'alive' || (echo "Smoke test failed on AI API" && exit 1)
+                    echo 'All smoke tests passed successfully!'
                 '''
             }
         }
@@ -147,14 +145,14 @@ EOF
 
     post {
         success {
-            echo 'Deployment finished successfully!' [cite: 37]
+            echo 'Deployment finished successfully!'
         }
         failure {
-            echo 'Deployment failed!' [cite: 38]
+            echo 'Deployment failed!'
         }
         always {
-            echo 'Cleaning up temporal build artifacts...' [cite: 38]
-            // Удаляем файл с секретами из воркспейса в целях безопасности
+            echo 'Cleaning up temporal build artifacts...'
+            // Гарантированно удаляем секреты из воркспейса по окончании сборки
             sh 'rm -f .env'
         }
     }
