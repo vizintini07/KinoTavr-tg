@@ -22,7 +22,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 echo 'Checking out code from Git...'
-                checkout scm
+                //checkout scm
             }
         }
 
@@ -43,9 +43,11 @@ pipeline {
         stage('Test & Validate DB') {
             steps {
                 echo 'Running integration tests for Database...'
+                sh 'docker compose up -d'
                 sh '''
                     # Запускаем контейнер базы данных для проверки
-                    docker compose up -d db
+                    ls
+                    docker compose up -d
 
                     # Ожидаем готовности PostgreSQL (до 30 попыток)
                     for i in {1..30}; do
