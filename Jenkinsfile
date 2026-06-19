@@ -146,22 +146,10 @@ EOF
     post {
         success {
             echo 'Deployment finished successfully!'
-            emailext (
-                subject: "SUCCESS: Kinotavr Deployment - Build #${BUILD_NUMBER}",
-                body: "Local deployment completed successfully!\nBuild: ${BUILD_NUMBER}\nBranch: ${GIT_BRANCH}\nCommit: ${GIT_COMMIT}",
-                to: "${env.NOTIFICATION_EMAIL}",
-                attachLog: false
-            )
         }
 
         failure {
             echo 'Deployment failed!'
-            emailext (
-                subject: "FAILURE: Kinotavr Deployment - Build #${BUILD_NUMBER}",
-                body: "Local deployment failed! Check Jenkins console output for details.",
-                to: "${env.NOTIFICATION_EMAIL}",
-                attachLog: true
-            )
         }
 
         always {

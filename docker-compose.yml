@@ -96,12 +96,12 @@ services:
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - API_URL=http://ai_backend:8001/chat
-      - WEBAPP_URL=${WEBAPP_URL:-http://localhost:8080}
+      - WEBAPP_URL=${WEBAPP_URL:-http://localhost:8081}
     depends_on:
       ai_backend:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "8080:8081"
 
 volumes:
   pgdata:
