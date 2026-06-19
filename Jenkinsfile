@@ -25,7 +25,9 @@ pipeline {
             steps {
                 echo 'Checking out code from Git...'
                 checkout scm
-                sh 'git submodule update --init --recursive || true'
+                sh 'git clone https://github.com/young-feed/KinoTavr.git'
+                sh 'pwd'
+                sh 'ls'
             }
         }
 
