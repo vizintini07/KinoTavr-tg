@@ -24,6 +24,7 @@ pipeline {
                 echo 'Checking out code from Git...'
 		        cleanWs()
                 checkout scm
+                echo "код успешно скачан"
             }
         }
 
