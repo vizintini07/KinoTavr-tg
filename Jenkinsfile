@@ -4,7 +4,7 @@ pipeline {
     environment {
         // Настройки проекта
         PROJECT_NAME = 'kinotavr'
-        DOCKER_COMPOSE_FILE = 'docker-compose.yml'
+        DOCKER_COMPOSE_FILE = 'docker  compose.yml'
 
         // Секреты (извлекаются из Jenkins Credentials)
         OPENAI_API_KEY = credentials('openai-api-key')
@@ -35,7 +35,7 @@ pipeline {
             steps {
                 echo 'Validating project structure...'
                 sh '''
-                    test -f docker-compose.yml || (echo "docker-compose.yml not found" && exit 1)
+                    test -f docker  compose.yml || (echo "docker  compose.yml not found" && exit 1)
                     test -f Dockerfile.ai || (echo "Dockerfile.ai not found" && exit 1)
                     test -f tgBot/Dockerfile || (echo "tgBot/Dockerfile not found" && exit 1)
                     test -f db_kinotavr/backend/Dockerfile || (echo "backend Dockerfile not found" && exit 1)
@@ -50,11 +50,11 @@ pipeline {
                 echo 'Running integration tests for Database...'
                 sh '''
                     # Запускаем только контейнер базы данных для проверки
-                    docker-compose up -d db
+                    docker compose up -d db
 
                     # Ожидаем готовности PostgreSQL (до 30 попыток)
                     for i in {1..30}; do
-                        if docker-compose exec -T db pg_isready -U user_admin -d movies_db; then
+                        if docker  compose exec -T db pg_isready -U user_admin -d movies_db; then
                             echo "Database is ready!"
                             break
                         fi
@@ -63,10 +63,10 @@ pipeline {
                     done
 
                     # Проверяем структуру (вывод списка таблиц)
-                    docker-compose exec -T db psql -U user_admin -d movies_db -c "\\dt"
+                    docker  compose exec -T db psql -U user_admin -d movies_db -c "\\dt"
 
                     # Останавливаем тестовую БД и очищаем тома
-                    docker-compose down -v
+                    docker  compose down -v
                 '''
             }
         }
@@ -89,13 +89,13 @@ DB_PORT=5432
 EOF
 
                     echo "Stopping old microservices if they are running..."
-                    docker-compose down || true
+                    docker  compose down || true
 
                     echo "Building new images without cache..."
-                    docker-compose build --no-cache
+                    docker  compose build --no-cache
 
                     echo "Launching all services in detached mode..."
-                    docker-compose up -d
+                    docker  compose up -d
                 '''
             }
         }
@@ -107,8 +107,8 @@ EOF
                     echo "Giving services 10 seconds to initialize..."
                     sleep 10
 
-                    # Проверяем статус контейнеров через docker-compose
-                    docker-compose ps
+                    # Проверяем статус контейнеров через docker  compose
+                    docker  compose ps
 
                     # Проверка AI бэкенда
                     for i in {1..30}; do
@@ -157,7 +157,7 @@ EOF
         always {
             echo 'Cleaning up temporal build artifacts...'
             // На локальном хосте контейнеры приложения ДОЛЖНЫ остаться запущенными,
-            // поэтому здесь мы больше не вызываем `docker-compose down`.
+            // поэтому здесь мы больше не вызываем `docker  compose down`.
             // Удаляем только старый кэш или временные файлы сборки, если необходимо.
         }
     }
