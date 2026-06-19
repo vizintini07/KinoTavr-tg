@@ -22,8 +22,10 @@ pipeline {
         stage('Checkout') {
             steps {
                 echo 'Checking out code from Git...'
-		cleanWs()
-                checkout scm
+		        cleanWs()
+                checkout([$class: 'GitSCM', 
+                    branches: [[name: '*/main']], // Убедитесь, что ветка называется main или master
+                    userRemoteConfigs: [[url: 'https://github.com/young-feed/KinoTavr']]])
             }
         }
 
