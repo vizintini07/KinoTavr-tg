@@ -23,8 +23,7 @@ pipeline {
             steps {
                 echo 'Checking out code from Git...'
 		        cleanWs()
-                sh 'git config --global http.sslVerify false'
-                checkout scm
+                sh 'git clone https://github.com/young-feed/KinoTavr.git .'
                 echo "код успешно скачан"
             }
         }
