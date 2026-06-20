@@ -128,6 +128,24 @@ services:
     environment:
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
 
+  # 7. ngrok tunnel for AI Backend API (for Mini App browser access)
+  ngrok_api:
+    image: ngrok/ngrok:latest
+    container_name: kinotavr_ngrok_api
+    restart: unless-stopped
+    command:
+      - "http"
+      - "ai_backend:8001"
+      - "--authtoken=${NGROK_AUTHTOKEN}"
+      - "--log=stdout"
+    ports:
+      - "4041:4040"  # ngrok web interface at http://localhost:4041
+    depends_on:
+      ai_backend:
+        condition: service_healthy
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+
 volumes:
   pgdata:
     driver: local

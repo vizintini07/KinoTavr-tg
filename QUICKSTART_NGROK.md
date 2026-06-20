@@ -44,9 +44,17 @@ chmod +x update_webapp_url.sh
 
 ## Шаг 5: Проверьте работу
 
-1. **ngrok dashboard:** http://localhost:4040
-2. **Ваш Mini App:** Откройте URL из вывода скрипта
-3. **Telegram бот:** Отправьте `/start` и нажмите "🎬 Открыть Кинотавр"
+1. **ngrok dashboards:**
+   - Mini App: http://localhost:4040
+   - API: http://localhost:4041
+
+2. **Проверьте Mini App:**
+   Откройте URL из вывода скрипта (WEBAPP_URL)
+
+3. **Telegram бот:**
+   - Отправьте `/start`
+   - Нажмите "🎬 Открыть Кинотавр"
+   - Mini App должен открыться и работать без ошибок
 
 ## Полезные команды
 
@@ -54,11 +62,15 @@ chmod +x update_webapp_url.sh
 # Посмотреть логи бота
 docker-compose logs -f telegram_bot
 
-# Посмотреть логи ngrok
+# Посмотреть логи ngrok (Mini App)
 docker-compose logs -f ngrok
 
-# Получить текущий ngrok URL
-curl http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url'
+# Посмотреть логи ngrok (API)
+docker-compose logs -f ngrok_api
+
+# Получить текущие ngrok URL
+curl http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url'  # Mini App
+curl http://localhost:4041/api/tunnels | jq -r '.tunnels[0].public_url'  # API
 
 # Перезапустить только бота
 docker-compose restart telegram_bot
