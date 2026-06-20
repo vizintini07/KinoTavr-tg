@@ -14,7 +14,7 @@ COPY main.py .
 COPY miniapp ./miniapp
 
 # Expose port for Mini App web server
-EXPOSE 8080
+EXPOSE 8081
 
 # Start the bot
 CMD ["python", "main.py"]
