@@ -19,7 +19,7 @@ load_dotenv()
 # Настройки
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 API_URL = os.getenv("API_URL")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://your-domain.com")  # URL где будет размещено приложение
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://spookily-unspoiled-yearbook.ngrok-free.dev")  # URL где будет размещено приложение
 
 # Инициализация бота и диспетчера
 bot = Bot(token=BOT_TOKEN)
