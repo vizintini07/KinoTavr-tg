@@ -4,23 +4,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 import json
-from openai import OpenAI, AsyncOpenAI
+import asyncio
+# Импортируем официальную библиотеку Google AI
+import google.generativeai as genai
 from dotenv import load_dotenv
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
 load_dotenv()
 
+# Настраиваем Gemini API
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
 class Message(BaseModel):
     question: str
     answer: str
+
 class BotRequest(BaseModel):
     user_id: int
     consversion: list[Message]
 
 app = FastAPI()
 
-# Добавляем CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,12 +34,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-ai_client = AsyncOpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    base_url="https://api.groq.com/openai/v1"
-)
-
-# Функция подключения к базе данных
 def get_db_connection():
     return psycopg2.connect(
         host=os.getenv("DB_HOST", "localhost"),
@@ -55,7 +54,7 @@ SYSTEM_PROMPT = """
 
 🔥 ГЛАВНОЕ (КРИТИЧЕСКИ ВАЖНО):
 Ты НЕ ищешь и НЕ предлагаешь конкретные названия фильмов! Твоя задача — только определить эмоцию и выдать её цвет. Фильм подберет база данных.
-ТВОЙ ОТВЕТ ДОЛЖЕН БЫТЬ СТРОГО В ФОРМАТЕ JSON. НИКАКОГО ТЕКСТА ИЛИ МАРКДАУНА (```json) ДО ИЛИ ПОСЛЕ.
+ТВОЙ ОТВЕТ ДОЛЖЕН БЫТЬ СТРОГО В ФОРМАТЕ JSON.
 
 🚨 ФОРМАТ ОТВЕТА (выбирай один из двух):
 
@@ -90,31 +89,43 @@ SYSTEM_PROMPT = """
 """
 
 @app.get("/ping")
-
 async def ping_server():
     return {"status": "Kinotavr is alive!"}
 
 @app.post('/chat')
 async def process_chat(request: BotRequest):
-    history_lenght = len(request.consversion)
-    masseges_for_ai = [
-        {"role": "system",
-         "content": SYSTEM_PROMPT
-         }
-    ]
+    # Создаем историю диалога в формате, который понимает Gemini
+    contents = []
+    
     for msg in request.consversion:
-        masseges_for_ai.append({"role": "assistant", "content": msg.question})
-        masseges_for_ai.append({"role": "user", "content": msg.answer})
+        # У Лламы ты пушил раздельно, в Gemini мы группируем реплики
+        contents.append({"role": "model", "parts": [{"text": msg.question}]})
+        contents.append({"role": "user", "parts": [{"text": msg.answer}]})
 
-    response = await ai_client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=masseges_for_ai,
-        response_format={"type": "json_object"},
-        temperature=0.7
+    # Используем модель gemini-1.5-flash — она очень быстрая и бесплатная
+    model = genai.GenerativeModel(
+        model_name="gemini-1.5-flash",
+        system_instruction=SYSTEM_PROMPT, # Системный промпт вшивается сюда
+        generation_config={
+            "response_mime_type": "application/json", # Жестко требуем JSON на выходе
+            "temperature": 0.7
+        }
     )
-    ai_answer_text = response.choices[0].message.content
 
-    # 3. Превращаем текст в настоящий Python-словарь с помощью библиотеки json
+    try:
+        # Библиотека google-generativeai не имеет нативного async метода, 
+        # поэтому мы безопасно запускаем синхронный вызов в асинхронном потоке (ThreadPool)
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(
+            None, 
+            lambda: model.generate_content(contents if contents else "Привет! Начнем диалог.")
+        )
+        ai_answer_text = response.text
+    except Exception as e:
+        # Если само API Google упало (например, проблемы с ключом)
+        return {"action": "ask", "text": f"Проблема с ИИ-центром: {str(e)}"}
+
+    # Превращаем ответ в Python-словарь
     try:
         result = json.loads(ai_answer_text)
     except json.JSONDecodeError:
@@ -147,10 +158,8 @@ async def process_chat(request: BotRequest):
             result["movie"] = None
             result["db_error"] = str(e)
 
-    # 4. Отдаем результат Телеграм-боту!
     return result
 
-# Дополнительный эндпоинт для получения всех цветов
 @app.get('/colors')
 async def get_colors():
     try:
