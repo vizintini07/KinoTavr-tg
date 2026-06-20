@@ -85,6 +85,9 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
 
   # 5. Telegram Bot
   telegram_bot:
